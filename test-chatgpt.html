@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mock ChatGPT — teste de integração</title>
+    <style>
+      body { font: 16px/1.6 system-ui; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #1f2937; }
+      .turn { padding: 16px; margin: 16px 0; border-radius: 12px; }
+      .user { background: #eef2ff; }
+      .assistant { background: #f8fafc; border: 1px solid #e2e8f0; }
+      .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 6px; }
+      h2 { margin-top: 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Mock ChatGPT (para QA do SpeedRead)</h1>
+    <p>Estrutura DOM imita chatgpt.com — botão SpeedRead deve aparecer ao passar o mouse sobre respostas do assistente.</p>
+
+    <div class="turn user" data-message-author-role="user">
+      <div class="label">Você</div>
+      Explique RSVP em duas frases.
+    </div>
+
+    <div class="turn assistant" data-message-author-role="assistant">
+      <div class="label">Assistente</div>
+      <h2># RSVP — leitura veloz</h2>
+      <p>RSVP (**Rapid Serial Visual Presentation**) apresenta uma palavra de cada vez no mesmo ponto focal,
+      eliminando *micro-sacadas* e regressões. Isso permite leitura significativamente mais rápida sem perda de
+      compreensão para a maioria dos textos.</p>
+      <ul>
+        <li>Item de lista 1</li>
+        <li>Item de lista 2</li>
+      </ul>
+      <p>Saiba mais em [este artigo](https://example.com) ou no `código fonte` deste plugin.</p>
+    </div>
+
+    <div class="turn user" data-message-author-role="user">
+      <div class="label">Você</div>
+      E quando funciona melhor?
+    </div>
+
+    <div class="turn assistant" data-message-author-role="assistant">
+      <div class="label">Assistente</div>
+      Funciona melhor para textos lineares como artigos, e-mails e documentação.
+      Em textos densos com fórmulas, código ou tabelas, a abordagem tradicional ainda é superior.
+    </div>
+  </body>
+</html>

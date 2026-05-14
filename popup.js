@@ -1,0 +1,92 @@
+const textEl = document.getElementById("text");
+const readBtn = document.getElementById("read");
+const pasteBtn = document.getElementById("paste");
+const errEl = document.getElementById("err");
+const counterEl = document.getElementById("counter");
+const optionsLink = document.getElementById("open-options");
+
+const DRAFT_KEY = "popup_draft";
+
+chrome.storage.local.get(DRAFT_KEY, (r) => {
+  if (r[DRAFT_KEY]) {
+    textEl.value = r[DRAFT_KEY];
+    updateCounter();
+  }
+});
+
+textEl.addEventListener("input", () => {
+  updateCounter();
+  chrome.storage.local.set({ [DRAFT_KEY]: textEl.value });
+});
+
+textEl.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+    e.preventDefault();
+    triggerRead();
+  }
+});
+
+readBtn.addEventListener("click", triggerRead);
+
+pasteBtn.addEventListener("click", async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) {
+      textEl.value = text;
+      updateCounter();
+      chrome.storage.local.set({ [DRAFT_KEY]: text });
+      textEl.focus();
+    } else {
+      showError("Clipboard vazio.");
+    }
+  } catch {
+    showError("Permissão de clipboard negada — cole manualmente com Ctrl/Cmd+V.");
+  }
+});
+
+optionsLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  chrome.runtime.openOptionsPage();
+});
+
+function updateCounter() {
+  const n = textEl.value.trim().split(/\s+/).filter(Boolean).length;
+  counterEl.textContent = `${n} palavra${n === 1 ? "" : "s"}`;
+  readBtn.disabled = n === 0;
+}
+
+async function triggerRead() {
+  const text = textEl.value.trim();
+  if (!text) return;
+  hideError();
+  readBtn.disabled = true;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) throw new Error("no-tab");
+    if (/^(chrome|edge|about|chrome-extension):/i.test(tab.url || "")) {
+      throw new Error("restricted-page");
+    }
+    await chrome.tabs.sendMessage(tab.id, { type: "sr-open", text });
+    window.close();
+  } catch (err) {
+    const code = err?.message || "";
+    if (code === "restricted-page") {
+      showError("Páginas internas (chrome://, about:) não suportam SpeedRead. Abra em qualquer site normal.");
+    } else if (/Receiving end does not exist/i.test(err?.message || "")) {
+      showError("Recarregue a aba ativa para que o SpeedRead carregue, ou tente em outra aba.");
+    } else {
+      showError("Não foi possível abrir o leitor: " + (err?.message || "erro desconhecido"));
+    }
+    readBtn.disabled = false;
+  }
+}
+
+function showError(msg) {
+  errEl.textContent = msg;
+  errEl.classList.add("show");
+  setTimeout(() => errEl.classList.remove("show"), 250);
+}
+
+function hideError() {
+  errEl.textContent = "";
+}

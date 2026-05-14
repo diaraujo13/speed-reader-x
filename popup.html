@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>SpeedRead X</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        margin: 0;
+        padding: 14px;
+        width: 340px;
+        background: #ffffff;
+        color: #0f172a;
+      }
+      h1 { font-size: 13px; margin: 0 0 10px; letter-spacing: 0.3px; text-transform: uppercase; color: #64748b; }
+      textarea {
+        width: 100%;
+        min-height: 140px;
+        max-height: 280px;
+        padding: 10px;
+        font: 14px/1.45 system-ui;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        resize: vertical;
+        box-sizing: border-box;
+        background: #f8fafc;
+      }
+      textarea:focus { outline: 2px solid #6366f1; outline-offset: -1px; }
+      .row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+      .btn {
+        flex: 1;
+        padding: 9px 12px;
+        border-radius: 8px;
+        border: 0;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .btn:hover { filter: brightness(1.05); }
+      .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .btn.secondary {
+        flex: 0 0 auto;
+        background: #f1f5f9;
+        color: #334155;
+        font-weight: 500;
+      }
+      .btn.secondary:hover { background: #e2e8f0; }
+      .meta { display: flex; justify-content: space-between; font-size: 12px; color: #64748b; margin-top: 8px; }
+      .meta a { color: #6366f1; text-decoration: none; }
+      .meta a:hover { text-decoration: underline; }
+      .err { color: #b91c1c; font-size: 12px; margin-top: 8px; min-height: 16px; }
+      .err.show { animation: shake 200ms; }
+      @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+    </style>
+  </head>
+  <body>
+    <h1>⚡ SpeedRead — cole um texto</h1>
+    <textarea id="text" placeholder="Cole ou digite o texto aqui (Ctrl/Cmd+V)…" autofocus></textarea>
+    <div class="row">
+      <button class="btn secondary" id="paste" title="Colar do clipboard">📋 Colar</button>
+      <button class="btn" id="read" disabled>Ler</button>
+    </div>
+    <div class="err" id="err"></div>
+    <div class="meta">
+      <a href="#" id="open-options">Configurações</a>
+      <span id="counter">0 palavras</span>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

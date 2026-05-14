@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "SpeedRead X",
+  "version": "0.1.0",
+  "description": "Selecione um texto, clique em SpeedRead e leia em RSVP (palavra por palavra) com velocidade configurável.",
+  "permissions": ["storage", "activeTab"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "SpeedRead X",
+    "default_popup": "popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "speedread-x@izaias.dev",
+      "strict_min_version": "121.0"
+    }
+  }
+}
