@@ -57,15 +57,26 @@ Aba dedicada da extensão para ler texto colado SEM depender de uma página host
 - **Views**: alterna `#input-view` ↔ `#reader-view` via atributo `hidden`. **Crítico**: `startReading()` chama `showReaderView()` ANTES de `buildPlayer()` — o modo linear mede `wordEl.clientWidth` em `render()`, que é 0 enquanto a view está `display:none` (desalinha; com 1 palavra seria permanente, pois o tick final não recorrige). `render()` ainda guarda `clientWidth > 0`, e há listener de `resize` (debounced via rAF) porque a stage do reader é fluida (`clamp/vw`), diferente do modal de largura fixa do content.js.
 - **Sessão**: `reader_session` (separada da `session` do modal in-page).
 
+## Estatísticas (stats-core.js / stats.html / stats.js)
+
+Métricas de leitura agregadas em `chrome.storage.local.stats` e exibidas num dashboard de página inteira.
+
+- **`stats-core.js`** — lógica PURA (sem `chrome.*`, sem DOM), exposta em `globalThis.SRStats`: schema, `mergeStats(prev, delta, dayKey)`, `summarize()`, `lastNDays()`. Carregado no mundo isolado do content script (**1º item de `content_scripts.js`, ANTES de `content.js`**) e nas páginas `reader.html`/`stats.html`. **Não** chamar `chrome.*` aqui — quem persiste faz o `get→merge→set` (envolto em `safeChrome` no content.js). Assim é seguro nos dois contextos e não dispara "Extension context invalidated".
+- **Schema**: `{ v:1, totals:{readings,words,ms}, bySource:{modal,reader,chatgpt}, byDay:{ "YYYY-MM-DD": {…,bySource} } }`. `words` = palavras (tokens) exibidas no RSVP durante a reprodução; `ms` = tempo ATIVO (só tocando); `readings` = leituras iniciadas. Dia em fuso LOCAL.
+- **Instrumentação** (`content.js` e `reader.js`): cada `tick()` soma 1 palavra; `play()` marca `playStartedAt`; `pause()`/fim acumulam `ms` e dão flush; flush throttled a cada 5s em leituras longas; `reader.js` também faz flush em `pagehide`. Deltas são zerados otimisticamente no flush pra não re-somar. **Origem**: `content.js` passa `source` em `openModal(text, source)` — `"modal"` (seleção/popup) ou `"chatgpt"`; `reader.js` é sempre `"reader"` (rotulado "Aba" na UI). Adições são puramente aditivas — **não** mexem na semântica de `index` (off-by-one).
+- **Dashboard** (`stats.html`/`stats.js`): cards (leituras, palavras, wpm efetivo = palavras ÷ minutos ativos, tempo total) + gráfico de barras empilhadas SVG (sem libs) dos últimos 14 dias + breakdown por origem. Atualiza ao vivo via `storage.onChanged`. Botão "Limpar" usa confirmação inline (NÃO `confirm()`). Entrada por links em `options.html`, `popup.html` e `reader.html` (`#open-stats`).
+
 ## Layout
 
 ```
-manifest.json     # MV3, content script em <all_urls>, options_ui em aba, action.popup, background, permissão tabs
-content.js        # IIFE: detecta seleção, monta trigger + modal em Shadow DOM, roda RSVP, escuta runtime.onMessage
+manifest.json     # MV3, content_scripts [stats-core.js, content.js] em <all_urls>, options_ui em aba, action.popup, background, permissão tabs
+stats-core.js     # Lógica pura de estatísticas (globalThis.SRStats): schema + merge + agregação. Sem chrome.*/DOM.
+content.js        # IIFE: detecta seleção, monta trigger + modal em Shadow DOM, roda RSVP, registra stats, escuta runtime.onMessage
 background.js     # SW (Chrome) / event page (Firefox): troca o popup por aba e abre reader.html em páginas internas
-options.html/.js  # Página de configurações com preview ao vivo + temas + sobre
+options.html/.js  # Página de configurações com preview ao vivo + temas + sobre + link p/ estatísticas
 popup.html/.js    # Janelinha do toolbar action: textarea pra colar texto avulso
 reader.html/.js   # Leitor de página inteira (aba dedicada): textarea gigante + motor RSVP portado do content.js
+stats.html/.js    # Dashboard de estatísticas: cards + gráfico SVG por dia + breakdown por origem
 test.html         # Página local com texto pt-BR para QA manual
 test-chatgpt.html # Mock de chatgpt.com (com [data-message-author-role]) para QA
 dev.sh            # Lança Chrome com a extensão carregada + porta de debug 9222

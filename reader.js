@@ -145,6 +145,26 @@
     chrome.storage.local.remove(SESSION_KEY);
   }
 
+  // --- Estatísticas (schema/merge em stats-core.js → globalThis.SRStats) ---
+  const STATS_KEY = "stats";
+  // Fila serial: o get→merge→set é assíncrono; sem serializar, dois flushes próximos
+  // (throttle + pause) intercalam e a 2ª escrita sobrescreve a 1ª. A captura+zeragem
+  // do delta é SÍNCRONA, então cada flush carrega exatamente o que acumulou.
+  let statsQueue = Promise.resolve();
+  function flushStats(delta) {
+    if (!globalThis.SRStats) return;
+    if (!delta || (!delta.readings && !delta.words && !delta.ms)) return;
+    const d = { source: "reader", readings: delta.readings, words: delta.words, ms: delta.ms };
+    delta.readings = 0; delta.words = 0; delta.ms = 0; // captura síncrona p/ não re-somar
+    statsQueue = statsQueue.then(() => new Promise((resolve) => {
+      chrome.storage.local.get(STATS_KEY, (r) => {
+        if (chrome.runtime?.lastError) return resolve();
+        const merged = globalThis.SRStats.mergeStats(r[STATS_KEY], d, globalThis.SRStats.dayKey());
+        chrome.storage.local.set({ [STATS_KEY]: merged }, () => resolve());
+      });
+    }));
+  }
+
   // ---- contador / rascunho ----
   function updateCounter() {
     const n = textEl.value.trim().split(/\s+/).filter(Boolean).length;
@@ -177,11 +197,24 @@
     speedRange.value = settings.wpm;
     wpmLabel.textContent = `${settings.wpm} wpm`;
     let lastPersistAt = 0;
+    const statsRec = { readings: 0, words: 0, ms: 0 };
+    let playStartedAt = 0;
+    let lastStatsFlush = 0;
+    let readingCredited = false;
+    // Credita a leitura só com engajamento real (≥2 palavras OU ≥1s ativo).
+    const creditReading = () => {
+      if (!readingCredited && (statsRec.words >= 2 || statsRec.ms >= 1000)) {
+        statsRec.readings = 1;
+        readingCredited = true;
+      }
+    };
 
     player = {
       originalText: text,
       words,
       index: startIndex,
+      // -1 = nada contado; em resume parte do startIndex (já contado na sessão anterior).
+      _lastCountedIndex: startIndex > 0 ? startIndex : -1,
       timer: null,
       playing: false,
       _trackBuilt: false,
@@ -229,6 +262,11 @@
         progressBar.style.width = `${pct}%`;
       },
       tick() {
+        if (this.index !== this._lastCountedIndex) {
+          statsRec.words += 1;
+          this._lastCountedIndex = this.index;
+          creditReading();
+        }
         this.render();
         const baseMs = 60000 / settings.wpm;
         const delay = wordDelay(this.words[this.index], baseMs);
@@ -237,6 +275,13 @@
         if (now - lastPersistAt > 1500) {
           lastPersistAt = now;
           persistSession();
+        }
+        if (playStartedAt && now - lastStatsFlush > 5000) {
+          lastStatsFlush = now;
+          statsRec.ms += now - playStartedAt;
+          playStartedAt = now;
+          creditReading();
+          flushStats(statsRec);
         }
         if (this.index >= this.words.length - 1) {
           this.pause();
@@ -253,6 +298,7 @@
         if (this.playing) return;
         if (this.index >= this.words.length - 1) this.index = 0;
         this.playing = true;
+        playStartedAt = Date.now();
         toggleBtn.textContent = "⏸";
         this.tick();
       },
@@ -261,6 +307,9 @@
         if (this.timer) clearTimeout(this.timer);
         this.timer = null;
         toggleBtn.textContent = "⏵";
+        if (playStartedAt) { statsRec.ms += Date.now() - playStartedAt; playStartedAt = 0; }
+        creditReading();
+        flushStats(statsRec);
         persistSession();
       },
       restart() {
@@ -358,6 +407,11 @@
     chrome.runtime.openOptionsPage();
   });
 
+  document.getElementById("open-stats").addEventListener("click", (e) => {
+    e.preventDefault();
+    chrome.tabs.create({ url: chrome.runtime.getURL("stats.html") });
+  });
+
   readerView.addEventListener("click", (e) => {
     const action = e.target.closest("[data-action]")?.dataset.action;
     if (!action) return;
@@ -408,6 +462,12 @@
     if (!player || !settings.linearMode || readerView.hidden) return;
     cancelAnimationFrame(resizeRaf);
     resizeRaf = requestAnimationFrame(() => player.render());
+  });
+
+  // Flush das estatísticas pendentes ao fechar/ocultar a aba (best-effort;
+  // o flush throttled de 5s já limita a perda durante leituras longas).
+  window.addEventListener("pagehide", () => {
+    if (player && player.playing) player.pause();
   });
 
   // ---- init ----

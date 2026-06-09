@@ -82,6 +82,7 @@
       .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 13px; color: var(--slate-400); }
       .meta a { color: #6366f1; text-decoration: none; font-weight: 600; }
       .meta a:hover { text-decoration: underline; }
+      .meta-links { display: inline-flex; gap: 14px; }
       .err { color: #b91c1c; font-size: 13px; min-height: 18px; margin-top: 8px; }
       .err.show { animation: shake 200ms; }
       @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
@@ -195,7 +196,10 @@
           </div>
           <div class="err" id="err"></div>
           <div class="meta">
-            <a href="#" id="open-options">⚙ Configurações</a>
+            <span class="meta-links">
+              <a href="#" id="open-options">⚙ Configurações</a>
+              <a href="#" id="open-stats">📊 Estatísticas</a>
+            </span>
             <span id="counter">0 palavras</span>
           </div>
         </div>
@@ -230,6 +234,7 @@
         </p>
       </section>
     </div>
+    <script src="stats-core.js"></script>
     <script src="reader.js"></script>
   </body>
 </html>

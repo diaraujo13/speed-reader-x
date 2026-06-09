@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SpeedRead X — Estatísticas</title>
+    <style>
+      * { box-sizing: border-box; }
+      :root {
+        --grad: linear-gradient(135deg, #6366f1, #8b5cf6);
+        --modal: #6366f1;
+        --reader: #8b5cf6;
+        --chatgpt: #22d3ee;
+        --slate-900: #0f172a;
+        --slate-700: #334155;
+        --slate-600: #475569;
+        --slate-400: #94a3b8;
+        --slate-300: #cbd5e1;
+        --slate-200: #e2e8f0;
+        --slate-100: #f1f5f9;
+        --slate-50: #f8fafc;
+      }
+      body {
+        margin: 0;
+        font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        color: var(--slate-900);
+        background:
+          radial-gradient(1200px 600px at 50% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
+          var(--slate-50);
+        padding: 40px 20px 80px;
+      }
+      [hidden] { display: none !important; }
+      .wrap { max-width: 860px; margin: 0 auto; }
+
+      .brand {
+        display: flex; align-items: center; gap: 10px;
+        font-weight: 800; font-size: 22px; margin: 0 0 4px;
+      }
+      .brand .bolt {
+        display: inline-grid; place-items: center;
+        width: 36px; height: 36px; border-radius: 10px;
+        background: var(--grad); color: #fff; font-size: 19px;
+        box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+      }
+      .brand .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+      .tagline { color: var(--slate-600); margin: 0 0 28px; }
+
+      /* Cards */
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+      .card {
+        background: #fff; border: 1px solid var(--slate-200); border-radius: 14px;
+        padding: 18px 20px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+      }
+      .card .label { font-size: 13px; color: var(--slate-600); display: flex; align-items: center; gap: 7px; }
+      .card .value { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; margin-top: 6px; }
+      .card .value small { font-size: 15px; font-weight: 600; color: var(--slate-400); }
+
+      .panel {
+        background: #fff; border: 1px solid var(--slate-200); border-radius: 16px;
+        padding: 22px; margin-top: 22px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+      }
+      .panel h2 { font-size: 16px; margin: 0 0 4px; }
+      .panel .sub { color: var(--slate-400); font-size: 13px; margin: 0 0 18px; }
+
+      .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; font-size: 13px; color: var(--slate-700); }
+      .legend span { display: inline-flex; align-items: center; gap: 7px; }
+      .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+      .chart svg { width: 100%; height: auto; display: block; }
+      .chart .axis { fill: var(--slate-400); font-size: 11px; }
+      .chart .gridline { stroke: var(--slate-200); stroke-width: 1; }
+      .bar:hover { opacity: 0.82; }
+
+      /* Breakdown horizontal */
+      .breakdown { display: flex; flex-direction: column; gap: 14px; }
+      .brow { display: grid; grid-template-columns: 90px 1fr 120px; align-items: center; gap: 12px; }
+      .brow .name { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+      .brow .name i { width: 11px; height: 11px; border-radius: 3px; }
+      .brow .track { height: 14px; background: var(--slate-100); border-radius: 7px; overflow: hidden; }
+      .brow .fill { height: 100%; border-radius: 7px; transition: width 300ms ease; }
+      .brow .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--slate-600); font-size: 13px; }
+
+      .empty {
+        text-align: center; padding: 60px 20px; color: var(--slate-600);
+        background: #fff; border: 1px dashed var(--slate-300); border-radius: 16px; margin-top: 22px;
+      }
+      .empty .big { font-size: 40px; }
+      .empty h2 { margin: 12px 0 6px; }
+
+      .footer { display: flex; justify-content: space-between; align-items: center; margin-top: 28px; font-size: 13px; }
+      .footer a { color: #6366f1; text-decoration: none; font-weight: 600; }
+      .footer a:hover { text-decoration: underline; }
+      .danger {
+        border: 1px solid #fecaca; background: #fff1f2; color: #b91c1c;
+        padding: 8px 14px; border-radius: 9px; cursor: pointer; font-weight: 600; font-size: 13px;
+      }
+      .danger:hover { background: #ffe4e6; }
+      .confirm { display: inline-flex; gap: 8px; align-items: center; }
+      .confirm button { padding: 8px 14px; border-radius: 9px; cursor: pointer; font-weight: 600; font-size: 13px; border: 0; }
+      .confirm .yes { background: #dc2626; color: #fff; }
+      .confirm .no { background: var(--slate-100); color: var(--slate-700); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1 class="brand"><span class="bolt">📊</span><span class="grad">Estatísticas</span></h1>
+      <p class="tagline">Seu histórico de leitura no SpeedRead X — leituras, palavras (tokens), velocidade efetiva e tempo.</p>
+
+      <!-- Estado vazio -->
+      <div id="empty" class="empty" hidden>
+        <div class="big">🐢➡️🐇</div>
+        <h2>Ainda sem leituras</h2>
+        <p>Leia qualquer texto com o SpeedRead e suas estatísticas aparecem aqui.</p>
+      </div>
+
+      <!-- Conteúdo -->
+      <div id="content" hidden>
+        <div class="cards">
+          <div class="card">
+            <div class="label">📚 Leituras</div>
+            <div class="value" id="c-readings">0</div>
+          </div>
+          <div class="card">
+            <div class="label">🔤 Palavras lidas</div>
+            <div class="value" id="c-words">0</div>
+          </div>
+          <div class="card">
+            <div class="label">⚡ Velocidade média</div>
+            <div class="value" id="c-wpm">0 <small>wpm</small></div>
+          </div>
+          <div class="card">
+            <div class="label">⏱ Tempo total</div>
+            <div class="value" id="c-time">0s</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Palavras por dia</h2>
+          <p class="sub">Últimos 14 dias · empilhado por origem</p>
+          <div class="chart" id="chart"></div>
+          <div class="legend">
+            <span><i style="background: var(--modal)"></i> Modal (seleção/popup)</span>
+            <span><i style="background: var(--reader)"></i> Aba (leitor)</span>
+            <span><i style="background: var(--chatgpt)"></i> ChatGPT</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Por origem</h2>
+          <p class="sub">Total de palavras lidas por onde a leitura começou</p>
+          <div class="breakdown" id="breakdown"></div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <a href="options.html">⚙ Configurações</a>
+        <span id="clear-slot">
+          <button class="danger" id="clear">🗑 Limpar estatísticas</button>
+        </span>
+      </div>
+    </div>
+    <script src="stats-core.js"></script>
+    <script src="stats.js"></script>
+  </body>
+</html>

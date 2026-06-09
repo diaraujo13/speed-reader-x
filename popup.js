@@ -5,6 +5,7 @@ const errEl = document.getElementById("err");
 const counterEl = document.getElementById("counter");
 const optionsLink = document.getElementById("open-options");
 const openTabLink = document.getElementById("open-tab");
+const openStatsLink = document.getElementById("open-stats");
 
 const DRAFT_KEY = "popup_draft";
 
@@ -71,6 +72,12 @@ optionsLink.addEventListener("click", (e) => {
 openTabLink.addEventListener("click", (e) => {
   e.preventDefault();
   openReaderTab();
+});
+
+openStatsLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  chrome.tabs.create({ url: chrome.runtime.getURL("stats.html") });
+  window.close();
 });
 
 // Leitor de página inteira: garante que o texto atual chegue via popup_draft antes de abrir.

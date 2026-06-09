@@ -179,6 +179,39 @@
     }
   }
 
+  // --- Estatísticas de leitura (schema/merge em stats-core.js → globalThis.SRStats) ---
+  const STATS_KEY = "stats";
+  // Fila serial por contexto: o get→merge→set é assíncrono; sem serializar, dois
+  // flushes próximos (ex.: throttle seguido de pause) intercalam e a 2ª escrita
+  // sobrescreve a 1ª (lost update). A captura+zeragem do delta é SÍNCRONA, então
+  // cada flush carrega exatamente o que acumulou. (Race entre ABAS distintas não é
+  // coberta — improvável aqui e é só telemetria best-effort.)
+  let statsQueue = Promise.resolve();
+  function flushStats(delta, source) {
+    if (orphaned || !globalThis.SRStats) return;
+    if (!delta || (!delta.readings && !delta.words && !delta.ms)) return;
+    const d = { source, readings: delta.readings, words: delta.words, ms: delta.ms };
+    delta.readings = 0; delta.words = 0; delta.ms = 0; // captura síncrona p/ não re-somar
+    statsQueue = statsQueue.then(() => new Promise((resolve) => {
+      if (orphaned || !contextAlive()) { selfDestruct(); return resolve(); }
+      try {
+        chrome.storage.local.get(STATS_KEY, (r) => {
+          try {
+            if (orphaned || chrome.runtime?.lastError) return resolve();
+            const merged = globalThis.SRStats.mergeStats(r[STATS_KEY], d, globalThis.SRStats.dayKey());
+            chrome.storage.local.set({ [STATS_KEY]: merged }, () => resolve());
+          } catch (e) {
+            if (/context invalidated/i.test(e?.message || "")) selfDestruct();
+            resolve();
+          }
+        });
+      } catch (e) {
+        if (/context invalidated/i.test(e?.message || "")) selfDestruct();
+        resolve();
+      }
+    }));
+  }
+
   loadSettings().then((s) => {
     settings = { ...DEFAULTS, ...s };
   });
@@ -198,6 +231,13 @@
   ensureHost();
   initChatGPTInjector();
   initMessageBridge();
+
+  // Flush das estatísticas pendentes ao fechar/navegar a aba (best-effort; o flush
+  // throttled de 5s já limita a perda). Só pagehide — visibilitychange pausaria a
+  // leitura ao trocar de aba, mudando o comportamento de playback.
+  window.addEventListener("pagehide", () => {
+    if (!orphaned && playerState?.playing) playerState.pause();
+  });
 
   let selectionDebounce = null;
   document.addEventListener("selectionchange", () => {
@@ -313,7 +353,7 @@
     if (triggerEl) triggerEl.style.display = "none";
   }
 
-  async function openModal(text) {
+  async function openModal(text, source = "modal") {
     closeModal({ keepSession: true });
     hideTrigger();
     const words = tokenize(text);
@@ -323,10 +363,10 @@
       session && session.text === text && session.index < words.length - 1
         ? session.index
         : 0;
-    buildModal(text, words, startIndex);
+    buildModal(text, words, startIndex, source);
   }
 
-  function buildModal(text, words, startIndex) {
+  function buildModal(text, words, startIndex, source = "modal") {
     ensureBackdrop();
     modalEl = document.createElement("div");
     modalEl.className = "sr-modal";
@@ -366,11 +406,25 @@
 
     speedRange.value = settings.wpm;
     let lastPersistAt = 0;
+    const statsRec = { readings: 0, words: 0, ms: 0 };
+    let playStartedAt = 0;
+    let lastStatsFlush = 0;
+    let readingCredited = false;
+    // Credita a leitura só com engajamento real (≥2 palavras OU ≥1s ativo) —
+    // abrir e fechar na cara não conta como leitura.
+    const creditReading = () => {
+      if (!readingCredited && (statsRec.words >= 2 || statsRec.ms >= 1000)) {
+        statsRec.readings = 1;
+        readingCredited = true;
+      }
+    };
 
     playerState = {
       originalText: text,
       words,
       index: startIndex,
+      // -1 = nada contado; em resume parte do startIndex (já contado na sessão anterior).
+      _lastCountedIndex: startIndex > 0 ? startIndex : -1,
       timer: null,
       playing: false,
       minimized: false,
@@ -417,6 +471,11 @@
       },
       tick() {
         if (orphaned) return;
+        if (this.index !== this._lastCountedIndex) {
+          statsRec.words += 1;
+          this._lastCountedIndex = this.index;
+          creditReading();
+        }
         this.render();
         const baseMs = 60000 / settings.wpm;
         const delay = wordDelay(this.words[this.index], baseMs);
@@ -425,6 +484,13 @@
         if (now - lastPersistAt > 1500) {
           lastPersistAt = now;
           persistSession();
+        }
+        if (playStartedAt && now - lastStatsFlush > 5000) {
+          lastStatsFlush = now;
+          statsRec.ms += now - playStartedAt;
+          playStartedAt = now;
+          creditReading();
+          flushStats(statsRec, source);
         }
         if (this.index >= this.words.length - 1) {
           this.pause();
@@ -443,6 +509,7 @@
           this.index = 0;
         }
         this.playing = true;
+        playStartedAt = Date.now();
         toggleBtn.textContent = "⏸";
         this.tick();
       },
@@ -451,6 +518,9 @@
         if (this.timer) clearTimeout(this.timer);
         this.timer = null;
         toggleBtn.textContent = "⏵";
+        if (playStartedAt) { statsRec.ms += Date.now() - playStartedAt; playStartedAt = 0; }
+        creditReading();
+        flushStats(statsRec, source);
         persistSession();
       },
       restart() {
@@ -680,7 +750,7 @@
           e.preventDefault();
           e.stopPropagation();
           const text = (msg.innerText || msg.textContent || "").trim();
-          if (text) openModal(text);
+          if (text) openModal(text, "chatgpt");
         });
         msg.appendChild(btn);
       }
