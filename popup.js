@@ -4,14 +4,24 @@ const pasteBtn = document.getElementById("paste");
 const errEl = document.getElementById("err");
 const counterEl = document.getElementById("counter");
 const optionsLink = document.getElementById("open-options");
+const openTabLink = document.getElementById("open-tab");
 
 const DRAFT_KEY = "popup_draft";
 
-chrome.storage.local.get(DRAFT_KEY, (r) => {
+chrome.storage.local.get(DRAFT_KEY, async (r) => {
   if (r[DRAFT_KEY]) {
     textEl.value = r[DRAFT_KEY];
     updateCounter();
+    return;
   }
+  try {
+    const clip = await navigator.clipboard.readText();
+    if (clip && clip.trim() && clip.length < 200000) {
+      textEl.value = clip;
+      updateCounter();
+      textEl.select();
+    }
+  } catch {}
 });
 
 textEl.addEventListener("input", () => {
@@ -49,6 +59,19 @@ optionsLink.addEventListener("click", (e) => {
   chrome.runtime.openOptionsPage();
 });
 
+openTabLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  openReaderTab();
+});
+
+// Leitor de página inteira: garante que o texto atual chegue via popup_draft antes de abrir.
+function openReaderTab() {
+  chrome.storage.local.set({ [DRAFT_KEY]: textEl.value }, () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("reader.html") });
+    window.close();
+  });
+}
+
 function updateCounter() {
   const n = textEl.value.trim().split(/\s+/).filter(Boolean).length;
   counterEl.textContent = `${n} palavra${n === 1 ? "" : "s"}`;
@@ -71,7 +94,8 @@ async function triggerRead() {
   } catch (err) {
     const code = err?.message || "";
     if (code === "restricted-page") {
-      showError("Páginas internas (chrome://, about:) não suportam SpeedRead. Abra em qualquer site normal.");
+      // Página interna: o content script não roda aqui. Abre o leitor de página inteira.
+      return openReaderTab();
     } else if (/Receiving end does not exist/i.test(err?.message || "")) {
       showError("Recarregue a aba ativa para que o SpeedRead carregue, ou tente em outra aba.");
     } else {

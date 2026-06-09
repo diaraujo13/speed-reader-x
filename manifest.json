@@ -3,7 +3,11 @@
   "name": "SpeedRead X",
   "version": "0.1.0",
   "description": "Selecione um texto, clique em SpeedRead e leia em RSVP (palavra por palavra) com velocidade configurável.",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "clipboardRead", "tabs"],
+  "background": {
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

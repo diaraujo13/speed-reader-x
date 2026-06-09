@@ -124,39 +124,67 @@
     }
     @keyframes sr-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
+    .sr-stage { overflow: hidden; }
     .sr-word.sr-linear {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      gap: 32px;
-      align-items: baseline;
       width: 100%;
-    }
-    .sr-word.sr-linear .sr-prev,
-    .sr-word.sr-linear .sr-next {
-      font-size: 0.55em;
-      opacity: 0.32;
-      font-weight: 400;
-      white-space: nowrap;
+      position: relative;
       overflow: hidden;
-      text-overflow: ellipsis;
+      mask-image: linear-gradient(to right, transparent 0%, #000 18%, #000 82%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 18%, #000 82%, transparent 100%);
     }
-    .sr-word.sr-linear .sr-prev { text-align: right; }
-    .sr-word.sr-linear .sr-next { text-align: left; }
-    .sr-word.sr-linear .sr-current { text-align: center; white-space: nowrap; }
-    .sr-modal.sr-minimized .sr-word.sr-linear .sr-prev,
-    .sr-modal.sr-minimized .sr-word.sr-linear .sr-next { display: none; }
-    .sr-modal.sr-minimized .sr-word.sr-linear { display: block; }
+    .sr-track {
+      display: inline-flex;
+      gap: 36px;
+      align-items: baseline;
+      white-space: nowrap;
+      will-change: transform;
+      position: relative;
+      transition: transform var(--sr-tick, 200ms) cubic-bezier(0.65, 0.05, 0.36, 1);
+    }
+    .sr-track .sr-w {
+      font-size: 1em;
+      opacity: 0.22;
+      font-weight: 600;
+      transition: opacity var(--sr-tick, 200ms) cubic-bezier(0.65, 0.05, 0.36, 1);
+    }
+    .sr-track .sr-current { opacity: 1; }
   `;
   let settings = { ...DEFAULTS };
   let host, shadow, triggerEl, modalEl, backdropEl;
   let playerState = null;
+  let orphaned = false;
+
+  function contextAlive() {
+    try { return !!chrome?.runtime?.id; } catch { return false; }
+  }
+
+  function selfDestruct() {
+    if (orphaned) return;
+    orphaned = true;
+    if (playerState?.timer) { try { clearTimeout(playerState.timer); } catch {} }
+    playerState = null;
+    try { backdropEl?.remove(); } catch {}
+    try { modalEl?.remove(); } catch {}
+    try { triggerEl?.remove(); } catch {}
+    try { host?.remove(); } catch {}
+    backdropEl = modalEl = triggerEl = host = shadow = null;
+  }
+
+  function safeChrome(fn, fallback) {
+    if (!contextAlive()) { selfDestruct(); return fallback; }
+    try { return fn(); }
+    catch (e) {
+      if (/Extension context invalidated|context invalidated/i.test(e?.message || "")) selfDestruct();
+      return fallback;
+    }
+  }
 
   loadSettings().then((s) => {
     settings = { ...DEFAULTS, ...s };
   });
 
-  chrome.storage?.onChanged?.addListener((changes, area) => {
-    if (area !== "local") return;
+  safeChrome(() => chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (orphaned || area !== "local") return;
     for (const key of Object.keys(changes)) {
       if (key in DEFAULTS) settings[key] = changes[key].newValue;
     }
@@ -165,7 +193,7 @@
       if (playerState && !playerState.minimized) ensureBackdrop();
       playerState?.render();
     }
-  });
+  }));
 
   ensureHost();
   initChatGPTInjector();
@@ -177,17 +205,54 @@
     selectionDebounce = setTimeout(updateTrigger, 120);
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && modalEl) closeModal();
+    if (!modalEl || !playerState) return;
+    if (e.target?.matches?.("input, textarea, select, [contenteditable], [contenteditable=true]")) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      return closeModal({ keepSession: true });
+    }
+    if (e.key === "p" || e.key === "P" || e.key === " ") {
+      e.preventDefault();
+      playerState.playing ? playerState.pause() : playerState.play();
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      playerState.step(-1);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      playerState.step(1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      adjustWpm(25);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      adjustWpm(-25);
+    }
   });
 
+  function adjustWpm(delta) {
+    const next = Math.max(100, Math.min(1000, settings.wpm + delta));
+    if (next === settings.wpm) return;
+    settings.wpm = next;
+    const range = modalEl?.querySelector(".sr-speed input");
+    const label = modalEl?.querySelector(".sr-wpm");
+    if (range) range.value = next;
+    if (label) label.textContent = `${next} wpm`;
+    safeChrome(() => chrome.storage?.local?.set({ wpm: next }));
+    if (playerState && modalEl) {
+      modalEl.style.setProperty("--sr-tick", `${Math.round((60000 / next) * 0.85)}ms`);
+    }
+  }
+
   function initMessageBridge() {
-    chrome.runtime?.onMessage?.addListener((msg, _sender, sendResponse) => {
+    safeChrome(() => chrome.runtime?.onMessage?.addListener((msg, _sender, sendResponse) => {
+      if (orphaned) return;
       if (msg?.type === "sr-open" && typeof msg.text === "string") {
         openModal(msg.text);
         sendResponse({ ok: true });
       }
       return true;
-    });
+    }));
   }
 
   function getSelectedText() {
@@ -309,24 +374,53 @@
       timer: null,
       playing: false,
       minimized: false,
+      _trackBuilt: false,
+      _lastModeLinear: null,
+      buildTrack() {
+        wordEl.classList.add("sr-linear");
+        wordEl.innerHTML =
+          '<div class="sr-track">' +
+          this.words
+            .map((w, i) => `<span class="sr-w" data-idx="${i}">${formatWord(w)}</span>`)
+            .join("") +
+          "</div>";
+        this._trackBuilt = true;
+      },
       render() {
         const w = this.words[this.index];
         if (!w) return;
-        const cur = formatWord(w);
-        if (settings.linearMode) {
-          const prev = this.index > 0 ? escapeHtml(this.words[this.index - 1]) : "";
-          const next = this.index < this.words.length - 1 ? escapeHtml(this.words[this.index + 1]) : "";
-          wordEl.classList.add("sr-linear");
-          wordEl.innerHTML = `<span class="sr-prev">${prev}</span><span class="sr-current">${cur}</span><span class="sr-next">${next}</span>`;
-        } else {
-          wordEl.classList.remove("sr-linear");
-          wordEl.innerHTML = cur;
+        const wantLinear = settings.linearMode && !this.minimized;
+        if (this._lastModeLinear !== wantLinear) {
+          this._trackBuilt = false;
+          wordEl.classList.toggle("sr-linear", wantLinear);
+          this._lastModeLinear = wantLinear;
         }
+        if (wantLinear) {
+          if (!this._trackBuilt) this.buildTrack();
+          const all = wordEl.querySelectorAll(".sr-w");
+          all.forEach((el) => el.classList.remove("sr-current"));
+          const cur = all[this.index];
+          if (cur) {
+            cur.classList.add("sr-current");
+            const track = wordEl.querySelector(".sr-track");
+            const center = wordEl.clientWidth / 2;
+            const curCenterInTrack = cur.offsetLeft + cur.offsetWidth / 2;
+            track.style.transform = `translateX(${center - curCenterInTrack}px)`;
+          }
+        } else {
+          wordEl.innerHTML = formatWord(w);
+        }
+        const tickMs = 60000 / settings.wpm;
+        modalEl.style.setProperty("--sr-tick", `${Math.round(tickMs * 0.85)}ms`);
         const pct = ((this.index + 1) / this.words.length) * 100;
         progressBar.style.width = `${pct}%`;
       },
       tick() {
+        if (orphaned) return;
         this.render();
+        const baseMs = 60000 / settings.wpm;
+        const delay = wordDelay(this.words[this.index], baseMs);
+        modalEl.style.setProperty("--sr-tick", `${Math.round(delay * 0.85)}ms`);
         const now = Date.now();
         if (now - lastPersistAt > 1500) {
           lastPersistAt = now;
@@ -334,15 +428,20 @@
         }
         if (this.index >= this.words.length - 1) {
           this.pause();
+          toggleBtn.textContent = "↺";
           return;
         }
         this.timer = setTimeout(() => {
+          if (orphaned || !playerState) return;
           this.index++;
           this.tick();
-        }, 60000 / settings.wpm);
+        }, delay);
       },
       play() {
         if (this.playing) return;
+        if (this.index >= this.words.length - 1) {
+          this.index = 0;
+        }
         this.playing = true;
         toggleBtn.textContent = "⏸";
         this.tick();
@@ -357,6 +456,13 @@
       restart() {
         this.pause();
         this.index = 0;
+        this.render();
+        persistSession();
+      },
+      step(delta) {
+        const wasPlaying = this.playing;
+        if (wasPlaying) this.pause();
+        this.index = Math.max(0, Math.min(this.words.length - 1, this.index + delta));
         this.render();
         persistSession();
       },
@@ -389,13 +495,13 @@
         playerState.restart();
         playerState.play();
       }
-      if (action === "settings") chrome.runtime.sendMessage?.({ type: "open-options" });
+      if (action === "settings") safeChrome(() => chrome.runtime.sendMessage?.({ type: "open-options" }));
     });
 
     speedRange.addEventListener("input", (e) => {
       settings.wpm = Number(e.target.value);
       wpmLabel.textContent = `${settings.wpm} wpm`;
-      chrome.storage?.local?.set({ wpm: settings.wpm });
+      safeChrome(() => chrome.storage?.local?.set({ wpm: settings.wpm }));
     });
 
     playerState.render();
@@ -436,24 +542,26 @@
 
   function persistSession() {
     if (!playerState) return;
-    chrome.storage?.local?.set({
+    safeChrome(() => chrome.storage?.local?.set({
       session: {
         text: playerState.originalText,
         index: playerState.index,
         ts: Date.now(),
       },
-    });
+    }));
   }
 
   function clearSession() {
-    chrome.storage?.local?.remove?.("session");
+    safeChrome(() => chrome.storage?.local?.remove?.("session"));
   }
 
   function getSession() {
     return new Promise((resolve) => {
+      if (!contextAlive()) { selfDestruct(); return resolve(null); }
       try {
         chrome.storage.local.get("session", (r) => resolve(r?.session));
-      } catch {
+      } catch (e) {
+        if (/context invalidated/i.test(e?.message || "")) selfDestruct();
         resolve(null);
       }
     });
@@ -498,7 +606,18 @@
   }
 
   function tokenize(text) {
-    return stripMarkdown(text).split(" ").filter(Boolean);
+    return stripMarkdown(text)
+      .split(/\s+/)
+      .flatMap((tok) => tok.split(/[/\\|]/))
+      .filter(Boolean);
+  }
+
+  function wordDelay(word, baseMs) {
+    const len = word.length;
+    if (len <= 3) return Math.round(baseMs * 0.75);
+    if (len <= 6) return Math.round(baseMs * 1.0);
+    if (len <= 9) return Math.round(baseMs * 1.3);
+    return Math.round(baseMs * 1.6);
   }
 
   function stripMarkdown(text) {
@@ -581,9 +700,11 @@
 
   function loadSettings() {
     return new Promise((resolve) => {
+      if (!contextAlive()) { selfDestruct(); return resolve({}); }
       try {
         chrome.storage.local.get(DEFAULTS, (s) => resolve(s || {}));
-      } catch {
+      } catch (e) {
+        if (/context invalidated/i.test(e?.message || "")) selfDestruct();
         resolve({});
       }
     });

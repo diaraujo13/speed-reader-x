@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SpeedRead X — Leitor</title>
+    <style>
+      * { box-sizing: border-box; }
+      :root {
+        --grad: linear-gradient(135deg, #6366f1, #8b5cf6);
+        --slate-900: #0f172a;
+        --slate-600: #475569;
+        --slate-400: #94a3b8;
+        --slate-200: #e2e8f0;
+        --slate-100: #f1f5f9;
+        --slate-50: #f8fafc;
+      }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        color: var(--slate-900);
+        background:
+          radial-gradient(1200px 600px at 50% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
+          var(--slate-50);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      [hidden] { display: none !important; }
+
+      .wrap { width: 100%; max-width: 760px; }
+
+      .brand {
+        display: flex; align-items: center; gap: 10px;
+        font-weight: 800; font-size: 20px; letter-spacing: 0.2px;
+        margin: 0 0 4px;
+      }
+      .brand .bolt {
+        display: inline-grid; place-items: center;
+        width: 34px; height: 34px; border-radius: 10px;
+        background: var(--grad); color: #fff; font-size: 18px;
+        box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+      }
+      .brand .grad {
+        background: var(--grad); -webkit-background-clip: text; background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .tagline { color: var(--slate-600); margin: 0 0 22px; font-size: 14px; }
+
+      /* ---------- Input view ---------- */
+      .panel {
+        background: #fff;
+        border: 1px solid var(--slate-200);
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+      }
+      textarea {
+        width: 100%;
+        min-height: 46vh;
+        padding: 16px;
+        font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        border: 1px solid var(--slate-200);
+        border-radius: 12px;
+        resize: vertical;
+        background: var(--slate-50);
+        color: var(--slate-900);
+      }
+      textarea:focus { outline: 2px solid #6366f1; outline-offset: -1px; background: #fff; }
+      .actions { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+      .btn {
+        padding: 11px 18px; border-radius: 10px; border: 0; cursor: pointer;
+        font-weight: 600; font-size: 15px;
+      }
+      .btn.primary { background: var(--grad); color: #fff; flex: 1; }
+      .btn.primary:hover { filter: brightness(1.05); }
+      .btn.primary:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+      .btn.ghost { background: var(--slate-100); color: var(--slate-600); }
+      .btn.ghost:hover { background: var(--slate-200); }
+      .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 13px; color: var(--slate-400); }
+      .meta a { color: #6366f1; text-decoration: none; font-weight: 600; }
+      .meta a:hover { text-decoration: underline; }
+      .err { color: #b91c1c; font-size: 13px; min-height: 18px; margin-top: 8px; }
+      .err.show { animation: shake 200ms; }
+      @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+
+      /* ---------- Reader view (porta o visual do modal do content.js) ---------- */
+      .sr-card {
+        background: var(--slate-900);
+        color: #e2e8f0;
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+      }
+      .sr-header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 12px 16px;
+        background: rgba(255, 255, 255, 0.04);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .sr-title { font-weight: 700; letter-spacing: 0.3px; }
+      .sr-header-actions { display: flex; gap: 6px; }
+      .sr-icon {
+        background: transparent; color: inherit; border: 0; cursor: pointer;
+        height: 30px; padding: 0 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
+        display: inline-flex; align-items: center; gap: 6px;
+      }
+      .sr-icon:hover { background: rgba(255, 255, 255, 0.10); }
+
+      .sr-stage {
+        min-height: 42vh;
+        display: flex; align-items: center; justify-content: center;
+        padding: 32px 24px;
+        background: #fff;
+        overflow: hidden;
+      }
+      .sr-word {
+        font-size: clamp(40px, 7vw, 76px);
+        font-weight: 600;
+        color: #111;
+        letter-spacing: 0.5px;
+        text-align: center;
+        max-width: 100%;
+        word-break: break-word;
+        line-height: 1.1;
+      }
+      .sr-word b { color: var(--sr-bold, #ef4444); font-weight: 800; }
+
+      .sr-word.sr-linear {
+        width: 100%;
+        position: relative;
+        overflow: hidden;
+        mask-image: linear-gradient(to right, transparent 0%, #000 18%, #000 82%, transparent 100%);
+        -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 18%, #000 82%, transparent 100%);
+      }
+      .sr-track {
+        display: inline-flex;
+        gap: 48px;
+        align-items: baseline;
+        white-space: nowrap;
+        will-change: transform;
+        position: relative;
+        transition: transform var(--sr-tick, 200ms) cubic-bezier(0.65, 0.05, 0.36, 1);
+      }
+      .sr-track .sr-w {
+        font-size: 1em;
+        opacity: 0.22;
+        font-weight: 600;
+        transition: opacity var(--sr-tick, 200ms) cubic-bezier(0.65, 0.05, 0.36, 1);
+      }
+      .sr-track .sr-current { opacity: 1; }
+
+      .sr-controls {
+        display: flex; align-items: center; gap: 10px;
+        padding: 14px 16px;
+      }
+      .sr-btn {
+        background: rgba(255, 255, 255, 0.06); color: inherit;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px; padding: 9px 14px; cursor: pointer; font-size: 16px;
+      }
+      .sr-btn:hover { background: rgba(255, 255, 255, 0.12); }
+      .sr-primary { background: #6366f1; border-color: transparent; }
+      .sr-primary:hover { background: #818cf8; }
+      .sr-speed { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+      .sr-speed input { width: 200px; accent-color: #8b5cf6; }
+      .sr-wpm { min-width: 70px; text-align: right; opacity: 0.85; font-variant-numeric: tabular-nums; }
+      .sr-progress { height: 4px; background: rgba(255, 255, 255, 0.06); }
+      .sr-progress-bar { height: 100%; width: 0; background: var(--grad); transition: width 80ms linear; }
+
+      .kbd-hint {
+        margin-top: 14px; text-align: center; color: var(--slate-400); font-size: 12px;
+      }
+      .kbd-hint kbd {
+        background: #fff; border: 1px solid var(--slate-200); border-bottom-width: 2px;
+        border-radius: 6px; padding: 1px 6px; font: inherit; font-size: 11px; color: var(--slate-600);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1 class="brand"><span class="bolt">⚡</span><span class="grad">SpeedRead X</span></h1>
+
+      <!-- ===== Colar texto ===== -->
+      <section id="input-view">
+        <p class="tagline">Cole qualquer texto e leia em RSVP — palavra por palavra, na sua velocidade. Funciona até em páginas internas do navegador.</p>
+        <div class="panel">
+          <textarea id="text" placeholder="Cole ou digite o texto aqui (Ctrl/Cmd+V)…" autofocus></textarea>
+          <div class="actions">
+            <button class="btn ghost" id="paste" title="Colar do clipboard">📋 Colar</button>
+            <button class="btn primary" id="read" disabled>Ler ▶</button>
+          </div>
+          <div class="err" id="err"></div>
+          <div class="meta">
+            <a href="#" id="open-options">⚙ Configurações</a>
+            <span id="counter">0 palavras</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Leitor ===== -->
+      <section id="reader-view" hidden>
+        <div class="sr-card">
+          <div class="sr-header">
+            <span class="sr-title">SpeedRead</span>
+            <div class="sr-header-actions">
+              <button class="sr-icon" data-action="settings" title="Configurações">⚙</button>
+              <button class="sr-icon" data-action="new" title="Voltar e colar outro texto (Esc)">↩ Novo texto</button>
+            </div>
+          </div>
+          <div class="sr-stage">
+            <div class="sr-word"></div>
+          </div>
+          <div class="sr-controls">
+            <button class="sr-btn" data-action="restart" title="Reiniciar do começo">⏮</button>
+            <button class="sr-btn sr-primary" data-action="toggle" title="Pausar/Retomar (P / Espaço)">⏸</button>
+            <button class="sr-btn" data-action="stop" title="Parar e descartar progresso">⏹</button>
+            <div class="sr-speed">
+              <input type="range" min="100" max="1000" step="10" />
+              <span class="sr-wpm">300 wpm</span>
+            </div>
+          </div>
+          <div class="sr-progress"><div class="sr-progress-bar"></div></div>
+        </div>
+        <p class="kbd-hint">
+          <kbd>P</kbd>/<kbd>Espaço</kbd> pausar · <kbd>←</kbd><kbd>→</kbd> palavra · <kbd>↑</kbd><kbd>↓</kbd> velocidade · <kbd>Esc</kbd> voltar
+        </p>
+      </section>
+    </div>
+    <script src="reader.js"></script>
+  </body>
+</html>

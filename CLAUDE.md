@@ -31,7 +31,9 @@ Fluxo do usuário:
 - **Detecção de seleção**: usa `selectionchange` debounced em 120ms (NÃO `mouseup` — esse é race-prone com a finalização da seleção em alguns sites). `updateTrigger()` também ignora se há modal aberto não-minimizado.
 - **Bridge popup → content script**: `chrome.runtime.onMessage` em `initMessageBridge()` aceita `{ type: "sr-open", text }`. O `popup.js` faz `chrome.tabs.sendMessage(activeTabId, ...)` e fecha. Falha em `chrome://`, `about:`, ou abas onde o content script ainda não carregou — popup mostra erro acionável. Requer permission `activeTab` no manifest.
 - **Popup**: persiste rascunho em `chrome.storage.local.popup_draft` para não perder texto se a janela fechar acidentalmente. `Cmd/Ctrl+Enter` na textarea aciona "Ler".
-- **Linear mode** (`settings.linearMode`): renderiza `prev | current | next` em grid de 3 colunas (`1fr auto 1fr`). A coluna do meio (`auto`) com `text-align: center` mantém a palavra atual fixa no centro do stage independente do tamanho de prev/next. Vizinhas em `font-size: 0.55em; opacity: 0.32`. Quando minimizado, prev/next somem.
+- **Linear mode** (`settings.linearMode`): renderiza um `.sr-track` com TODAS as palavras lado a lado (inline-flex), e usa `transform: translateX(...)` com `cubic-bezier(0.65, 0.05, 0.36, 1)` pra deslizar o track e centralizar a palavra atual. Mask gradient nas bordas do `.sr-word` cria efeito de "fade infinito horizontal". Tick de animação = `60000/wpm * 0.85` ms (via CSS var `--sr-tick`) — termina antes do próximo tick. Todas as palavras com mesmo `font-size` e `font-weight`; só `opacity` muda (0.22 default → 1.0 atual). **Crítico**: posicionamento usa `cur.offsetLeft + offsetWidth/2` em relação a `wordEl.clientWidth/2` — NÃO `getBoundingClientRect` (gera feedback loop com transform) e NÃO `stage.clientWidth` (inclui padding 24px, dá offset constante). `.sr-track` precisa de `position: relative` pra `offsetLeft` ser confiável.
+- **Atalhos de teclado** (apenas com modal aberto, ignoram quando foco está em input/textarea/contenteditable): `P`/`Space` toggle pause, `←/→` step ±1 palavra, `↑/↓` ±25 wpm, `Esc` fecha (preserva sessão). `adjustWpm()` atualiza settings, slider, label e CSS var `--sr-tick` em sincronia.
+- **Auto-paste no popup**: ao abrir, se não houver `popup_draft` salvo, tenta `navigator.clipboard.readText()` (precisa de permission `clipboardRead` no manifest). Falha silenciosa se negado — usuário ainda pode usar botão "📋 Colar" manualmente.
 - **Backdrop dim** (`settings.backdropDim`): `.sr-backdrop` em `position: fixed; inset: 0; z-index: 2147483645` (uma camada abaixo do modal `2147483646`). Click no backdrop fecha o modal preservando sessão. Some quando minimizado (a pílula não justifica overlay full-screen).
 - **Settings ao vivo**: `chrome.storage.onChanged` no content script re-aplica tema, re-roda `render()`, e refaz `ensureBackdrop()`. Toggle de qualquer setting na página de opções reflete imediatamente em modais abertos sem precisar reabrir.
 
@@ -77,6 +79,12 @@ Não há test runner, linter, ou build configurado. **Não criar** sem pedir exp
 - `escapeHtml` obrigatório ao injetar texto selecionado no DOM (já implementado — usar sempre).
 - `z-index` da UI: trigger `2147483647`, modal `2147483646`.
 - Zoom/posicionamento: trigger é `position: absolute` com coordenadas de página (`scrollY + rect.bottom`); modal é centralizado e arrastável pelo header.
+
+## Orphan Content Script
+
+Quando a extensão é recarregada em `chrome://extensions`, content scripts já injetados em abas existentes ficam órfãos: continuam rodando, mas todo `chrome.runtime.*` / `chrome.storage.*` lança `Extension context invalidated`. No nosso caso o `tick()` chamava `persistSession()` a cada palavra → erro spammed.
+
+`content.js` tem `selfDestruct()` que dispara quando `chrome.runtime.id` vira `undefined` ou quando uma chamada lança esse erro. Remove host/modal/backdrop, zera `playerState`, e seta flag `orphaned = true` que `tick()` checa antes de continuar. **Toda nova chamada a `chrome.*` deve passar por `safeChrome()`** (o helper no topo do IIFE) ou checar `contextAlive()` antes — caso contrário o erro volta.
 
 ## Não Fazer
 
