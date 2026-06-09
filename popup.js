@@ -8,6 +8,15 @@ const openTabLink = document.getElementById("open-tab");
 
 const DRAFT_KEY = "popup_draft";
 
+// Mesma classificação de página interna do background.js — manter os dois em sincronia.
+const RESTRICTED_SCHEME =
+  /^(chrome|edge|brave|opera|vivaldi|about|chrome-extension|moz-extension|view-source|devtools|chrome-untrusted):/i;
+const STORE_HOST =
+  /^https?:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore|addons\.mozilla\.org|microsoftedge\.microsoft\.com\/addons)/i;
+function isRestricted(url) {
+  return !!url && (RESTRICTED_SCHEME.test(url) || STORE_HOST.test(url));
+}
+
 chrome.storage.local.get(DRAFT_KEY, async (r) => {
   if (r[DRAFT_KEY]) {
     textEl.value = r[DRAFT_KEY];
@@ -65,10 +74,22 @@ openTabLink.addEventListener("click", (e) => {
 });
 
 // Leitor de página inteira: garante que o texto atual chegue via popup_draft antes de abrir.
+// Reaproveita uma aba do leitor já aberta (mesmo critério do background.js) em vez de duplicar.
 function openReaderTab() {
+  const readerUrl = chrome.runtime.getURL("reader.html");
   chrome.storage.local.set({ [DRAFT_KEY]: textEl.value }, () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL("reader.html") });
-    window.close();
+    chrome.tabs.query({}, (tabs) => {
+      const existing =
+        !chrome.runtime.lastError &&
+        tabs.find((t) => t.url && t.url.split("#")[0].split("?")[0] === readerUrl);
+      if (existing && existing.id != null) {
+        chrome.tabs.update(existing.id, { active: true });
+        if (existing.windowId != null) chrome.windows.update(existing.windowId, { focused: true });
+      } else {
+        chrome.tabs.create({ url: readerUrl });
+      }
+      window.close();
+    });
   });
 }
 
@@ -86,7 +107,7 @@ async function triggerRead() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) throw new Error("no-tab");
-    if (/^(chrome|edge|about|chrome-extension):/i.test(tab.url || "")) {
+    if (isRestricted(tab.url)) {
       throw new Error("restricted-page");
     }
     await chrome.tabs.sendMessage(tab.id, { type: "sr-open", text });
@@ -95,6 +116,7 @@ async function triggerRead() {
     const code = err?.message || "";
     if (code === "restricted-page") {
       // Página interna: o content script não roda aqui. Abre o leitor de página inteira.
+      readBtn.disabled = false;
       return openReaderTab();
     } else if (/Receiving end does not exist/i.test(err?.message || "")) {
       showError("Recarregue a aba ativa para que o SpeedRead carregue, ou tente em outra aba.");

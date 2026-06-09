@@ -47,9 +47,12 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  // URL muda ao navegar; 'loading' cobre o início da navegação antes do url chegar.
-  if (changeInfo.url || changeInfo.status === "loading") {
-    syncTab(tabId, changeInfo.url || tab.url);
+  // changeInfo.url cobre navegação normal e SPA pushState. Em 'loading' o tab.url pode
+  // estar defasado (URL anterior), então só reconciliamos com tab.url confiável em 'complete'.
+  if (changeInfo.url) {
+    syncTab(tabId, changeInfo.url);
+  } else if (changeInfo.status === "complete") {
+    syncTab(tabId, tab.url);
   }
 });
 

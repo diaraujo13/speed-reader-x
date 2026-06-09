@@ -110,6 +110,12 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
+    // Rascunho compartilhado com o popup: se outra aba/popup alterar o texto enquanto
+    // estamos na tela de entrada (sem leitura ativa e sem foco no textarea), reflete aqui.
+    if (changes[DRAFT_KEY] && !player && document.activeElement !== textEl) {
+      textEl.value = changes[DRAFT_KEY].newValue || "";
+      updateCounter();
+    }
     let touched = false;
     for (const key of Object.keys(changes)) {
       if (key in DEFAULTS) { settings[key] = changes[key].newValue; touched = true; }
@@ -161,6 +167,7 @@
   function showReaderView() {
     inputView.hidden = true;
     readerView.hidden = false;
+    toggleBtn.focus(); // tira o foco do botão "Ler" (que ficou em display:none) e leva ao controle principal
   }
 
   // ---- player ----
@@ -207,8 +214,11 @@
             cur.classList.add("sr-current");
             const track = wordEl.querySelector(".sr-track");
             const center = wordEl.clientWidth / 2;
-            const curCenterInTrack = cur.offsetLeft + cur.offsetWidth / 2;
-            track.style.transform = `translateX(${center - curCenterInTrack}px)`;
+            // Sem layout ainda (clientWidth 0) → não posiciona; próximo tick/resize recentraliza.
+            if (center > 0) {
+              const curCenterInTrack = cur.offsetLeft + cur.offsetWidth / 2;
+              track.style.transform = `translateX(${center - curCenterInTrack}px)`;
+            }
           }
         } else {
           wordEl.innerHTML = formatWord(w);
@@ -284,8 +294,11 @@
         session && session.text === text && session.index < words.length - 1
           ? session.index
           : 0;
-      buildPlayer(text, words, startIndex);
+      // Mostra a view ANTES de montar o player: render() do modo linear mede
+      // wordEl.clientWidth, que é 0 enquanto a seção está com [hidden]/display:none
+      // (desalinha a 1ª palavra; com texto de 1 palavra o tick final nunca recorrige).
       showReaderView();
+      buildPlayer(text, words, startIndex);
     });
   }
 
@@ -386,6 +399,15 @@
       e.preventDefault();
       adjustWpm(-25);
     }
+  });
+
+  // Stage do reader é fluida (clamp/vw); o modo linear mede clientWidth em render().
+  // Re-centraliza ao redimensionar (content.js não precisa: modal tem largura fixa de 520px).
+  let resizeRaf = 0;
+  window.addEventListener("resize", () => {
+    if (!player || !settings.linearMode || readerView.hidden) return;
+    cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(() => player.render());
   });
 
   // ---- init ----
